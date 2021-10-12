@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Microsoft Cognitive Services Speech SDK JavaScript Sample for Speech Synthesis</title>
+  <meta charset="utf-8" />
+  <script src="https://ajax.aspnetcdn.com/ajax/jquery/jquery-3.6.0.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', 'Helvetica Neue', sans-serif;
+      font-size: 14px;
+    }
+
+    table, th, td {
+      border: 1px solid #f1f1f1;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      padding: 10px;
+    }
+
+    textarea {
+      font-family: Arial,sans-serif;
+    }
+
+    .mode {
+      font-size: 18px;
+    }
+
+    input:not(disabled) {
+      font-weight: bold;
+      color: black;
+    }
+
+    button {
+      padding: 4px 8px;
+      background: #0078d4;
+      color: #ffffff;
+    }
+
+    button:disabled {
+      padding: 4px 8px;
+      background: #ccc;
+      color: #666;
+    }
+
+    input[type=radio] {
+      position: relative;
+      z-index: 1;
+    }
+
+    input[type=radio] + label {
+      padding: 8px 4px 8px 30px;
+      margin-left: -30px;
+    }
+
+    input[type=radio]:checked + label {
+      background: #0078d4;
+      color: #ffffff;
+    }
+  </style>
+</head>
+<body>
+  <div id="warning">
+    <h1 style="font-weight:500;">Speech Speech SDK not found</h1>
+  </div>
+
+  <div id="content" style="display:none">
+    <table>
+      <tr>
+        <td align="right"><label for="synthesisText">Text</label></td>
+        <td>
+          <textarea id="synthesisText" style="display: inline-block;width:500px;height:100px"
+                 placeholder="Input text or ssml for synthesis."></textarea>
+        </td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>
+          <button id="startSynthesisAsyncButton">Start synthesis</button>
+          <button id="pauseButton">Pause</button>
+          <button id="resumeButton">Resume</button>
+        </td>
+      </tr>
+      <tr>
+        <td align="right" valign="top"><label for="resultsDiv">Results</label></td>
+        <td><textarea id="resultsDiv" readonly style="display: inline-block;width:500px;height:50px"></textarea></td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Speech SDK reference sdk. -->
+  <script src="https://aka.ms/csspeech/jsbrowserpackageraw"></script>
+
+  <!-- Browser Hooks -->
+  <script>
+    // status fields and start button in UI
+    var resultsDiv;
+    var startSynthesisAsyncButton, pauseButton, resumeButton;
+
+    // subscription key and region for speech services.
+    var subscriptionKey = "671c835c351a42c295654b9282d47f8a";
+    var regionOptions = "eastasia";
+    var SpeechSDK;
+    var synthesisText = "Hi I am dummy text.";
+    var synthesizer;
+    var player;
+
+
+    document.addEventListener("DOMContentLoaded", function () {
+      startSynthesisAsyncButton = document.getElementById("startSynthesisAsyncButton");
+      pauseButton = document.getElementById("pauseButton");
+      resumeButton = document.getElementById("resumeButton");
+      resultsDiv = document.getElementById("resultsDiv");
+
+      pauseButton.addEventListener("click", function () {
+        player.pause();
+        pauseButton.disabled = true;
+        resumeButton.disabled = false;
+      });
+
+      resumeButton.addEventListener("click", function () {
+        player.resume();
+        pauseButton.disabled = false;
+        resumeButton.disabled = true;
+      });
+
+      startSynthesisAsyncButton.addEventListener("click", function () {
+        resultsDiv.innerHTML = "";
+        synthesisText = document.getElementById("synthesisText");
+        
+        var speechConfig;
+        speechConfig = SpeechSDK.SpeechConfig.fromSubscription(subscriptionKey, regionOptions);
+        speechConfig.speechSynthesisVoiceName = "Microsoft Server Speech Text to Speech Voice (en-IN, NeerjaNeural)";
+
+        player = new SpeechSDK.SpeakerAudioDestination();
+        player.onAudioStart = function(_) {
+          window.console.log("playback started");
+          setTimeout(function(){ $("svg path :first-child").each( function(i) {this.beginElement();}); }, 0.5);
+        }
+        player.onAudioEnd = function (_) {
+          window.console.log("playback finished");
+          startSynthesisAsyncButton.disabled = false;
+          pauseButton.disabled = true;
+          resumeButton.disabled = true;
+        };
+
+        var audioConfig  = SpeechSDK.AudioConfig.fromSpeakerOutput(player);
+        synthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig, audioConfig);
+
+        synthesizer.synthesizing = function (s, e) {
+          window.console.log(e);
+        };
+
+        // The synthesis started event signals that the synthesis is started.
+        synthesizer.synthesisStarted = function (s, e) {
+          window.console.log(e);
+          pauseButton.disabled = false;
+        };
+
+        // The event synthesis completed signals that the synthesis is completed.
+        synthesizer.synthesisCompleted = function (s, e) {
+          console.log(e);
+        };
+
+        // The event signals that the service has stopped processing speech.
+        synthesizer.SynthesisCanceled = function (s, e) {
+          const cancellationDetails = SpeechSDK.CancellationDetails.fromResult(e.result);
+          let str = "(cancel) Reason: " + SpeechSDK.CancellationReason[cancellationDetails.reason];
+          if (cancellationDetails.reason === SpeechSDK.CancellationReason.Error) {
+            str += ": " + e.result.errorDetails;
+          }
+          window.console.log(e);
+          startSynthesisAsyncButton.disabled = false;
+          pauseButton.disabled = true;
+          resumeButton.disabled = true;
+        };
+
+        const complete_cb = function (result) {
+          if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+            resultsDiv.innerHTML += "synthesis finished";
+          } else if (result.reason === SpeechSDK.ResultReason.Canceled) {
+            resultsDiv.innerHTML += "synthesis failed. Error detail: " + result.errorDetails;
+          }
+          window.console.log(result);
+          synthesizer.close();
+          synthesizer = undefined;
+        };
+        const err_cb = function (err) {
+          startSynthesisAsyncButton.disabled = false;
+          phraseDiv.innerHTML += err;
+          window.console.log(err);
+          synthesizer.close();
+          synthesizer = undefined;
+        };
+
+        startSynthesisAsyncButton.disabled = true;
+        synthesizer.speakTextAsync(synthesisText.value,
+                  complete_cb,
+                  err_cb);
+        
+      });
+      Initialize(function (speechSdk) {
+        SpeechSDK = speechSdk;
+        startSynthesisAsyncButton.disabled = false;
+        pauseButton.disabled = true;
+        resumeButton.disabled = true;
+      });
+    });
+  </script>
+</body>
+</html>
