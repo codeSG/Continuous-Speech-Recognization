@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Speech Sample</title>
+    <meta charset="utf-8" />
+    <script type="text/javascript" src="./difflib-browser.js"></script>
+</head>
+
+<body style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; font-size:13px;">
+    <div id="warning">
+        <h1 style="font-weight:500;">Speech Recognition Speech SDK not found</h1>
+    </div>
+    <div id="content" style="display:none">
+        <table>
+            <tr>
+                <td align="right"><b></b></td>
+                <td>
+                    <button id="scenarioStartButton">Start</button>
+                    <button id="scenarioStopButton" disabled="disabled">Stop</button>
+                </td>
+            </tr>
+            <tr>
+                <td align="right">Results:</td>
+                <td align="left">
+                    <textarea id="phraseDiv" style="display: inline-block;width:500px;height:200px"></textarea>
+                </td>
+            </tr>
+            <tr>
+                <td align="right">Events:</td>
+                <td align="left">
+                    <textarea id="statusDiv"
+                        style="display: inline-block;width:500px;height:200px;overflow: scroll;white-space: nowrap;">
+                    </textarea>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- Speech SDK REFERENCE -->
+    <script src="https://aka.ms/csspeech/jsbrowserpackageraw"></script>
+
+    <!-- Speech SDK presence check -->
+    <script>
+        // On document load resolve the Speech SDK dependency
+        function Initialize(onComplete) {
+            if (!!window.SpeechSDK) {
+                document.getElementById('content').style.display = 'block';
+                document.getElementById('warning').style.display = 'none';
+                onComplete(window.SpeechSDK);
+            }
+        }
+    </script>
+
+    <!-- Browser Hooks -->
+    <script>
+        var SpeechSDK;
+        var phraseDiv, statusDiv;
+        var recognizer;
+        var scenarioStartButton, scenarioStopButton;
+        var reco;
+        var soundContext = undefined;
+        var key = "YOUR_KEY";
+        var region = "REGION";
+        try {
+            var AudioContext = window.AudioContext // our preferred impl
+                || window.webkitAudioContext       // fallback, mostly when on Safari
+                || false;                          // could not find.
+
+            if (AudioContext) {
+                soundContext = new AudioContext();
+            } else {
+                alert("Audio context not supported");
+            }
+        } catch (e) {
+            window.console.log("no sound context found, no audio output. " + e);
+        }
+
+        function resetUiForScenarioStart() {
+            phraseDiv.innerHTML = "";
+            statusDiv.innerHTML = "";       
+        }
+
+        document.addEventListener("DOMContentLoaded", function () {
+            scenarioStartButton = document.getElementById('scenarioStartButton');
+            scenarioStopButton = document.getElementById('scenarioStopButton');
+
+            phraseDiv = document.getElementById("phraseDiv");
+            statusDiv = document.getElementById("statusDiv");
+
+            scenarioStartButton.innerHTML = 'START';
+            scenarioStopButton.innerHTML = `STOP`; 
+
+            scenarioStartButton.addEventListener("click", function () {
+                        doContinuousRecognition();
+            });
+
+            scenarioStopButton.addEventListener("click", function() {
+                        reco.stopContinuousRecognitionAsync(
+                            function () {
+                                reco.close();
+                                reco = undefined;
+                            },
+                            function (err) {
+                                reco.close();
+                                reco = undefined;
+                            }
+                        );
+            });
+
+            Initialize(function (speechSdk) {
+                SpeechSDK = speechSdk;
+
+            });
+        });
+    </script>
+
+    <!-- Configuration and setup common to SDK objects, including events -->
+    <script>
+        function getAudioConfig() {
+            return SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();      
+        }
+
+        function getSpeechConfig(sdkConfigType) {
+            var speechConfig;
+            speechConfig = sdkConfigType.fromSubscription(key, region);
+            speechConfig.speechRecognitionLanguage = "en-US";
+            return speechConfig;
+        }
+
+        function onRecognizing(sender, recognitionEventArgs) {
+            var result = recognitionEventArgs.result;
+            statusDiv.innerHTML += `(recognizing) Reason: ${SpeechSDK.ResultReason[result.reason]}`
+                + ` Text: ${result.text}\r\n`;
+            // Update the hypothesis line in the phrase/result view (only have one)
+            phraseDiv.innerHTML = phraseDiv.innerHTML.replace(/(.*)(^|[\r\n]+).*\[\.\.\.\][\r\n]+/, '$1$2')
+                + `${result.text} [...]\r\n`;
+            phraseDiv.scrollTop = phraseDiv.scrollHeight;
+        }
+
+        function onRecognized(sender, recognitionEventArgs) {
+            var result = recognitionEventArgs.result;
+            onRecognizedResult(recognitionEventArgs.result);
+        }
+
+        function onRecognizedResult(result) {
+            phraseDiv.scrollTop = phraseDiv.scrollHeight;
+            statusDiv.innerHTML += `(recognized)  Reason: ${SpeechSDK.ResultReason[result.reason]}`;
+            phraseDiv.innerHTML = phraseDiv.innerHTML.replace(/(.*)(^|[\r\n]+).*\[\.\.\.\][\r\n]+/, '$1$2');
+
+            switch (result.reason) {
+                case SpeechSDK.ResultReason.NoMatch:
+                    var noMatchDetail = SpeechSDK.NoMatchDetails.fromResult(result);
+                    statusDiv.innerHTML += ` NoMatchReason: ${SpeechSDK.NoMatchReason[noMatchDetail.reason]}\r\n`;
+                    break;
+                case SpeechSDK.ResultReason.Canceled:
+                    var cancelDetails = SpeechSDK.CancellationDetails.fromResult(result);
+                    statusDiv.innerHTML += ` CancellationReason: ${SpeechSDK.CancellationReason[cancelDetails.reason]}`;
+                        + (cancelDetails.reason === SpeechSDK.CancellationReason.Error 
+                            ? `: ${cancelDetails.errorDetails}` : ``)
+                        + `\r\n`;
+                    break;
+                case SpeechSDK.ResultReason.RecognizedSpeech:
+                    statusDiv.innerHTML += `\r\n`;
+                    phraseDiv.innerHTML += `${result.text}\r\n`;
+                    break;
+            }
+        }
+
+        function onSessionStarted(sender, sessionEventArgs) {
+            statusDiv.innerHTML += `(sessionStarted) SessionId: ${sessionEventArgs.sessionId}\r\n`;
+            scenarioStartButton.disabled = true;
+            scenarioStopButton.disabled = false;
+        }
+
+        function onSessionStopped(sender, sessionEventArgs) {
+            statusDiv.innerHTML += `(sessionStopped) SessionId: ${sessionEventArgs.sessionId}\r\n`;
+            scenarioStartButton.disabled = false;
+            scenarioStopButton.disabled = true;
+        }
+
+        function onCanceled (sender, cancellationEventArgs) {
+            window.console.log(e);
+
+            statusDiv.innerHTML += "(cancel) Reason: " + SpeechSDK.CancellationReason[e.reason];
+            if (e.reason === SpeechSDK.CancellationReason.Error) {
+                statusDiv.innerHTML += ": " + e.errorDetails;
+            }
+            statusDiv.innerHTML += "\r\n";
+        }
+
+        function applyCommonConfigurationTo(recognizer) {
+            recognizer.recognizing = onRecognizing;
+            recognizer.recognized = onRecognized;
+            recognizer.canceled = onCanceled;
+            recognizer.sessionStarted = onSessionStarted;
+            recognizer.sessionStopped = onSessionStopped;
+        }
+    </script>
+
+    <!-- Top-level scenario functions -->
+    <script>
+        function doContinuousRecognition() {
+            resetUiForScenarioStart();
+
+            var audioConfig = getAudioConfig();
+            var speechConfig = getSpeechConfig(SpeechSDK.SpeechConfig);
+            if (!speechConfig) return;
+            
+            reco = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
+            applyCommonConfigurationTo(reco);
+            reco.startContinuousRecognitionAsync();
+        }
+    </script>
+</body>
+
+</html>
